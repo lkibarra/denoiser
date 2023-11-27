@@ -28,7 +28,7 @@ class SyntheticSignalGenerator():
     
     def write_audio(self, audio_data: bytes) -> str:
         curr_dir = os.getcwd()
-        file = "tests/synthetic_sig_test.wav"
+        file = "tests/synthetic_sig.wav"
         filepath = os.path.join(curr_dir, file)
         
         print("filepath: ", filepath)
