@@ -1,12 +1,14 @@
 import numpy as np
 from dataclasses import dataclass, field
+from functools import cached_property
 
 @dataclass
 class DenoiserPreprocessing:
     '''Data class to store speech preprocessing parameters'''
     
     SAMPLE_RATE = 16000
-    WINDOW_SIZE = 512               # Window size in samples
+    CHUNK_SIZE = 1536 
+    WINDOW_SIZE = 512
     FRAME_SIZE = int(WINDOW_SIZE / 2)    # Frame size in samples (half-window)
     WINDOW_OVERLAP_RATIO = 0.5
 
@@ -16,23 +18,18 @@ class DenoiserPreprocessing:
         0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 22, 26, 30, 34, 40, 46, 54, 62, 100
     ]
     
-    vorbis_window_coefficients: np.ndarray = field(init=False, default=None) 
-    dct_coefficients_matrix: np.ndarray = field(init=False, default=None)
-    
-    def __init__(self):
-        self.vorbis_window_coefficients = self.compute_vorbis_window_coeff()
-        self.dct_coefficients_matrix = self.compute_dct_coeff()
-        
-    def compute_vorbis_window_coeff(self):
+    @cached_property
+    def vorbis_coefficients(self) -> np.ndarray:
         i = np.arange(self.FRAME_SIZE, dtype=float)
         vorbis_window_coefficients = np.sin((0.5 * np.pi) * (np.sin(0.5 * np.pi * (i + 0.5) / self.FRAME_SIZE) ** 2))
         
-        print("Vorbis Window Coefficients:", len(vorbis_window_coefficients))
-        print(np.round(vorbis_window_coefficients, 3))
-        
         return vorbis_window_coefficients
     
-    def compute_dct_coeff(self):
+        # print("Vorbis Window Coefficients:", len(self.vorbis_window_coefficients))
+        # print(np.round(self.vorbis_window_coefficients, 3))
+    
+    @cached_property
+    def dct_matrix_coefficients(self) -> np.ndarray:
         self.dct_coefficients_matrix = np.zeros((self.NUM_BANDS, self.NUM_BANDS), dtype=float)
         
         for i in range(self.NUM_BANDS):
@@ -43,14 +40,18 @@ class DenoiserPreprocessing:
                     self.dct_coefficients_matrix[i, j] = \
                         np.sqrt(2 / self.NUM_BANDS) * np.cos((np.pi / self.NUM_BANDS) * i * (j + 0.5))
                         
+        return self.dct_coefficients_matrix       
         # print("DCT Coefficients Matrix:")
-        # print(np.round(self.dct_coefficients_matrix, 3))
+        # print(np.round(self.dct_coefficients_matrix, 3)) 
         
-    def apply_vorbis_window(self, x):
-        for i in range(len(self.vorbis_window_coefficients)):
-            x[i] *= self.vorbis_window_coefficients[i]
-            x[-i -1 ] *= self.vorbis_window_coefficients[i] 
-        return x
+    def apply_vorbis_window(self, window):
+        vorbis = self.vorbis_coefficients
+        
+        for i in range(len(vorbis)):
+            window[i] *= vorbis[i]
+            window[-i - 1] *= vorbis[i] 
+            
+        return window
     
     def apply_dct(self, x):
         y = np.dot(self.dct_coefficients_matrix.T, x)
