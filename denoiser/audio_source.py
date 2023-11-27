@@ -41,3 +41,47 @@ class WaveFileAudioSource():
             
             return bytes_read, data
            
+    def read_into_queue(self, data_queue: queue.Queue) -> int:
+        '''Read audio chunks and place the data into the queue'''
+        
+        bytes_read, data = self.read()
+        counter = 0
+        if bytes_read > 0 and data_queue is not None:
+            for i in range(0, len(data), self.bytes_per_chunk):
+                counter += 1
+                chunk = data[i:i+self.bytes_per_chunk]
+                data_queue.put(chunk)
+        print(f"The loop executed {counter} times.")
+        
+        print("total data")
+        print(len(data))
+        
+        print("bytes_read: ")
+        print(bytes_read)
+        
+        print("data_queue.qsize(): ")
+        print(data_queue.qsize())
+        
+        return bytes_read
+        
+    @property   
+    def ms_per_chunk(self) -> int:
+        return self._ms_per_chunk
+    
+    @cached_property
+    def bytes_per_chunk(self) -> int:
+        sample_time = 1 / self.sample_rate
+        sec_per_chunk = self._ms_per_chunk / 1000
+        num_samples = sec_per_chunk / sample_time
+
+        print("num_samples: ")
+        print(num_samples)
+        
+        print("bytes_per_chunk: ")
+        print(int(num_samples * 2)) # 2 bytes per sample
+        
+        return int(num_samples * 2)
+    
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
