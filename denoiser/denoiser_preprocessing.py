@@ -55,3 +55,50 @@ class DenoiserPreprocessing:
     def apply_dct(self, x):
         y = np.dot(self.dct_coefficients_matrix.T, x)
         return y
+    
+    def bark_bands(self, X):    # X is the FFT of the windowed signal 
+        '''Split the FFT into bands according to the Bark scale'''
+        
+        bands = []
+        total_amplitude = 0
+        for i in range(self.NUM_BANDS - 1):
+            band_start = self.BARK_BAND_SCALE[i] * 4 
+            band_end = self.BARK_BAND_SCALE[i + 1] * 4
+            band = X[band_start : band_end]
+            
+            bands.append(band)
+            total_amplitude += np.sum(np.abs(band))
+        
+        print("num_bands: ")
+        print(len(bands))
+        
+        print("total_amplitude: ")
+        print(total_amplitude)
+        
+        return bands, total_amplitude
+    
+    def normalize_amplitudes(self, bands, total_amplitude):
+        normalized_bands = [band / total_amplitude for band in bands]
+        return normalized_bands
+        
+    def compute_band_energies(self, X):
+        '''Calculate the energy in each band'''''
+        band_energies = []
+        bands, total_amplitude = self.bark_bands(X)
+        normalized_bands = self.normalize_amplitudes(bands, total_amplitude)
+        for i in range(self.NUM_BANDS - 1):
+            band = normalized_bands[i]
+            power = np.abs(band) ** 2
+            
+            band_size = len(band)
+            triang_scale = np.arange(band_size) / band_size
+            
+            band_energies[i] += np.sum((1 - triang_scale) * power)
+            band_energies[i + 1] += np.sum(triang_scale * power)
+                    
+        band_energies[0] *= 2
+        band_energies[self.NUM_BANDS - 1] *= 2
+        
+        return band_energies
+    
+    
