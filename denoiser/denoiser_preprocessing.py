@@ -22,3 +22,36 @@ class DenoiserPreprocessing:
     def __init__(self):
         self.vorbis_window_coefficients = self.compute_vorbis_window_coeff()
         self.dct_coefficients_matrix = self.compute_dct_coeff()
+        
+    def compute_vorbis_window_coeff(self):
+        i = np.arange(self.FRAME_SIZE, dtype=float)
+        vorbis_window_coefficients = np.sin((0.5 * np.pi) * (np.sin(0.5 * np.pi * (i + 0.5) / self.FRAME_SIZE) ** 2))
+        
+        print("Vorbis Window Coefficients:", len(vorbis_window_coefficients))
+        print(np.round(vorbis_window_coefficients, 3))
+        
+        return vorbis_window_coefficients
+    
+    def compute_dct_coeff(self):
+        self.dct_coefficients_matrix = np.zeros((self.NUM_BANDS, self.NUM_BANDS), dtype=float)
+        
+        for i in range(self.NUM_BANDS):
+            for j in range(self.NUM_BANDS):
+                if i == 0:
+                    self.dct_coefficients_matrix[i, j] = np.sqrt(1 / self.NUM_BANDS)
+                else :
+                    self.dct_coefficients_matrix[i, j] = \
+                        np.sqrt(2 / self.NUM_BANDS) * np.cos((np.pi / self.NUM_BANDS) * i * (j + 0.5))
+                        
+        # print("DCT Coefficients Matrix:")
+        # print(np.round(self.dct_coefficients_matrix, 3))
+        
+    def apply_vorbis_window(self, x):
+        for i in range(len(self.vorbis_window_coefficients)):
+            x[i] *= self.vorbis_window_coefficients[i]
+            x[-i -1 ] *= self.vorbis_window_coefficients[i] 
+        return x
+    
+    def apply_dct(self, x):
+        y = np.dot(self.dct_coefficients_matrix.T, x)
+        return y
