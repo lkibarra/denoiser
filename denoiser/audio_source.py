@@ -13,28 +13,15 @@ class WaveFileAudioSource():
     def read(self) -> Tuple[int, bytes]:
         '''Reads the audio file and returns the number of bytes read and the audio data'''
         
-        with wave.open(self._file_path, 'rb') as audio_data:
+        with wave.open(self._file_path, 'r') as audio_data:
             if audio_data.getsampwidth() != 2 or audio_data.getcomptype() != 'NONE':
                 raise ValueError("Unsupported audio format. Only signed 16-bit little-endian PCM is supported")
-            
-            num_frames = audio_data.getnframes()
-            print("audio_data.getframerate(): ")
-            print(audio_data.getframerate())
-            
-            print("audio_data.getnchannels(): ")
-            print(audio_data.getnchannels())
-            
-            print("audio_data.getsampwidth(): ")
-            print(audio_data.getsampwidth())
-            
-            print("audio_data.getnframes(): ")
-            print(audio_data.getnframes())
-            
-            if num_frames != self.sample_rate:
+        
+            if audio_data.getframerate() != self.sample_rate:
                 raise ValueError("Unsupported audio sampling frequency. Only 16kHz is supported")
             
             data = audio_data.readframes(-1)
-            bytes_read = num_frames * 2
+            bytes_read = audio_data.getnframes() * 2
             
             if bytes_read == 0:
                 raise ValueError("No audio data found in file")
@@ -51,17 +38,7 @@ class WaveFileAudioSource():
                 counter += 1
                 chunk = data[i:i+self.bytes_per_chunk]
                 data_queue.put(chunk)
-        print(f"The loop executed {counter} times.")
-        
-        print("total data")
-        print(len(data))
-        
-        print("bytes_read: ")
-        print(bytes_read)
-        
-        print("data_queue.qsize(): ")
-        print(data_queue.qsize())
-        
+
         return bytes_read
         
     @property   
@@ -85,3 +62,5 @@ class WaveFileAudioSource():
     @property
     def sample_rate(self) -> int:
         return self._sample_rate
+    
+    
