@@ -1,79 +1,101 @@
 import argparse
 import numpy as np
 import queue
+from dataclasses import dataclass, field
+from scipy.fft import fft
 from audio_source import WaveFileAudioSource
 from denoiser_preprocessing import DenoiserPreprocessing
-from pitch import Pitch
 from synthetic_signal_gen import SyntheticSignalGenerator
 import plot_gen
-from scipy.fft import fft, ifft, dct, idct
 
+
+@dataclass
+class ExtractedFeatures:
+    '''Data class to store extracted features'''
+    pitch: float = 0
+    band_energies: np.ndarray = field(default_factory=np.array)         # 24 band energies
+    bfcc: np.ndarray = field(default_factory=np.array)                  # 24 BFCCs
+    bfcc_first_derivs: np.ndarray = field(default_factory=np.array)     # First 6 BFCCs
+    bfcc_second_derivs: np.ndarray = field(default_factory=np.array)    # First 6 BFCCs
+    
 class Denoiser():
     def __init__(self):
-        self.denoise_preprocessing = DenoiserPreprocessing()
-        self.pitch_detector = Pitch(DenoiserPreprocessing.SAMPLE_RATE)
+        self.denoise_preprocessor = DenoiserPreprocessing()
         
-    def analyze_chunk(self, chunk: np.ndarray): # analyze 96ms of audio data (chunk size = 1536 bytes)
-        windowed = self.denoise_preprocessing.apply_vorbis_window(chunk)
+    def split_chunk(self, chunk: np.ndarray) -> np.ndarray:
+        return np.split(chunk, self.denoise_preprocessor.chunk_size / self.denoise_preprocessor.window_size)
+    
+    def extract_features(self, window):
+        '''Extract the features from the window'''
+        pitch = self.denoise_preprocessor.detect_pitch(window)
         
-        pitch = self.pitch_detector.detect_pitch(chunk)
-        print("pitch: ")
-        print(pitch)
+        windowed = self.denoise_preprocessor.apply_vorbis_window(window)
+        windowed_fft = fft(windowed)
+        band_energies = self.denoise_preprocessor.compute_band_energies(windowed_fft)
+        bfcc = self.denoise_preprocessor.compute_bfcc(windowed_fft)
+        derivs = self.denoise_preprocessor.compute_bcff_temporal_derivs(bfcc)
         
+        print(f"Pitch: {pitch}, \
+              Band Energies: {band_energies}, \
+              BFCC: {bfcc}, \
+              BFCC First Derivatives: {derivs[0]}, \
+              BFCC Second Derivatives: {derivs[1]}")
+        # return ExtractedFeatures(pitch, bfcc, band_energies)
         
-        return windowed
-        # result = np.zeros(len(chunk), dtype=np.int16)
+    def analyze_windows(self, split_chunk: np.ndarray):
+        features = []
         
-        # for i in range(0, len(chunk), self.denoise_preprocessing.WINDOW_SIZE):
-        #     window = chunk[i : i + self.denoise_preprocessing.WINDOW_SIZE]
+        for i, window in enumerate(split_chunk):
+            self.extract_features(window)
             
-        #     # Apply Vorbis Window
-        #     result[i : i + self.denoise_preprocessing.WINDOW_SIZE] = self.denoise_preprocessing.apply_vorbis_window(window.copy())
-        # return result
-            
+        return features
         
 def main(input_path, output_path):
-    sig_gen = SyntheticSignalGenerator()
-    path = sig_gen.synthetic_sin_signal(1, 100)
-    
-    source = WaveFileAudioSource(path,
-                                DenoiserPreprocessing.SAMPLE_RATE)
-
-    audio_queue = queue.Queue()
-    
-    source.read_into_queue(audio_queue)
     denoiser = Denoiser()
     
-    original = []
-    denoised = []
+    # Sine wave signal
+    t = np.arange(0, 0.48, 1/denoiser.denoise_preprocessor.sample_rate)
+    envelope = lambda t: np.exp(-t)
+    sin_signal = envelope(t) * np.sin(2 * np.pi * 700 * t)
     
-    counter = 0
-    while True:
-        try:
-            counter += 1
-            chunk = audio_queue.get(block=False)
-            chunk_int16 = np.copy(np.frombuffer(chunk, dtype=np.int16))
-            original.append(chunk_int16)
+    chunk = denoiser.split_chunk(sin_signal)
+    result = denoiser.analyze_windows(chunk)
+    
+    
+
+    # sig_gen = SyntheticSignalGenerator()
+    # path = sig_gen.synthetic_sin_signal(0.48, 100)
+    # source = WaveFileAudioSource(path, DenoiserPreprocessing.SAMPLE_RATE)
+
+    # audio_queue = queue.Queue()
+    
+    # source.read_into_queue(audio_queue)
+    
+    
+    
+    # counter = 0
+    # while True:
+    #     try:
+    #         counter += 1
+    #         chunk = audio_queue.get(block=False)
+    #         chunk_int16 = np.copy(np.frombuffer(chunk, dtype=np.int16))
             
-            windowed_chunk = denoiser.analyze_chunk(chunk_int16)
-            denoised.append(windowed_chunk)
+    #         if len(chunk) < DenoiserPreprocessing.CHUNK_SIZE:
+    #             chunk_int16 = np.pad(chunk_int16, (0, DenoiserPreprocessing.CHUNK_SIZE - len(chunk_int16)))
             
-        except queue.Empty:
-            # Queue is empty, break out of the loop
-            break
+    #         denoiser.analyze_window(chunk_int16)
+            
+    #     except queue.Empty:
+    #         # Queue is empty, break out of the loop
+    #         break
   
-    # print(f"The loop executed {counter} times.")
-    original = np.concatenate(original)
-    denoised = np.concatenate(denoised)
     
-    X = fft(original)
-    X_denoised = fft(denoised)
     
-    plot_gen.plot_freq_domain(X, DenoiserPreprocessing.SAMPLE_RATE, len(original), 'Original')
-    plot_gen.plot_freq_domain(X_denoised, DenoiserPreprocessing.SAMPLE_RATE, len(denoised), 'De')
+    # plot_gen.plot_freq_domain(X, DenoiserPreprocessing.SAMPLE_RATE, len(original), 'Original')
+    # plot_gen.plot_freq_domain(X_denoised, DenoiserPreprocessing.SAMPLE_RATE, len(denoised), 'Denosied')
     
-    plot_gen.plot_time_domain(original, DenoiserPreprocessing.SAMPLE_RATE, 'Original')
-    plot_gen.plot_time_domain(denoised, DenoiserPreprocessing.SAMPLE_RATE, 'Denoised')
+    # plot_gen.plot_time_domain(original, DenoiserPreprocessing.SAMPLE_RATE, 'Original')
+    # plot_gen.plot_time_domain(denoised, DenoiserPreprocessing.SAMPLE_RATE, 'Denoised')
         
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Denoiser")
