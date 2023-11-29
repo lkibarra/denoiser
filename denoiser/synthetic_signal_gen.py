@@ -31,12 +31,10 @@ class SyntheticSignalGenerator():
         file = "tests/synthetic_sig.wav"
         filepath = os.path.join(curr_dir, file)
         
-        print("filepath: ", filepath)
-        
         if os.path.exists(filepath):
             os.remove(filepath)
         
-        with wave.open(filepath, 'wb') as f:
+        with wave.open(filepath, 'w') as f:
             f.setnchannels(1)
             f.setsampwidth(2)  # 2 bytes because np.int16 is used
             f.setframerate(self.sample_rate)
@@ -44,13 +42,11 @@ class SyntheticSignalGenerator():
 
         return filepath
         
-    def synthetic_sin_signal(self, duration_s, freq_hz=1) -> str:
+    def synthetic_sin_signal(self, duration_s, freq_hz=100) -> str:
         t = np.arange(0, duration_s, 1 / self.sample_rate)
         
         sin_signal = self.volume * np.sin(2 * np.pi * freq_hz * t)
-        print("sin_signal: ")
-        print(len(sin_signal))
-        print(len(sin_signal.tobytes()))
-        data = (sin_signal * 32767).astype(np.int16).tobytes()
+        scaled = np.int16(sin_signal * 32767)
+        data = scaled.tobytes()
         
         return self.write_audio(data)
