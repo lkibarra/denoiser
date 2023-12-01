@@ -1,10 +1,10 @@
 import numpy as np
 from typing import Tuple
 from scipy.fft import fft, fftfreq
+from scipy.signal import butter, lfilter
 from functools import cached_property
 from librosa import yin
 from dataclasses import dataclass, field
-import plot_gen
 
 @dataclass
 class ExtractedFeatures:
@@ -76,10 +76,12 @@ class DenoiserPreprocessing:
     
     def extract_features(self, window) -> ExtractedFeatures:
         '''Extract features from a window'''
-        pitch = self.detect_pitch(window)
-        pitch_delayed_window = self.delay_window(window, pitch)
+        lpf_window = self.apply_butter_lowpass(window)
+        
+        pitch = self.detect_pitch(lpf_window)
+        pitch_delayed_window = self.delay_window(lpf_window, pitch)
        
-        windowed = self.apply_vorbis_window(window)
+        windowed = self.apply_vorbis_window(lpf_window)
         delayed_windowed = self.apply_vorbis_window(pitch_delayed_window)
         
         windowed_fft = fft(windowed)
@@ -128,6 +130,15 @@ class DenoiserPreprocessing:
         second_derivatives = np.gradient(first_derivatives)
         
         return first_derivatives, second_derivatives
+    
+    def calculate_per_band_gain(self, clean_band_energy, noisy_band_energy):
+        gains = np.zeros(self.num_bands)
+        
+        for i in range(self.num_bands):
+            gains[i] = np.sqrt(clean_band_energy[i] / noisy_band_energy[i])
+            
+        return gains
+            
         
     def compute_band_energies(self, bands) -> np.ndarray:
         '''Calculate the energy in each band'''''
@@ -204,6 +215,7 @@ class DenoiserPreprocessing:
     
     def delay_window(self, window, pitch):
         '''Delay the window by the pitch'''
+        
         pitch_period = int(self.sample_rate / pitch)
         
         return np.roll(window, pitch_period)
@@ -239,6 +251,22 @@ class DenoiserPreprocessing:
         
         flux = np.sum(np.square(np.diff(np.abs(window_fft))))
         return flux
-            
-        
     
+    def apply_butter_lowpass(self, window):
+        '''Apply a Butterworth lowpass filter to the window'''
+        
+        num, den = self.butter_lowpass()
+        filtered_window_fft = lfilter(num, den, window)
+        
+        return filtered_window_fft
+    
+    def butter_lowpass(self, cutoff=8000, order=4):
+        '''Butterworth lowpass filter'''
+        
+        nyquist = 0.5 * self.sample_rate
+        normal_cutoff = cutoff / nyquist
+        
+        num, den = butter(order, normal_cutoff, btype='low', analog=False)
+        
+        return num, den
+        
