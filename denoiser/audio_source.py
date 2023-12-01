@@ -5,9 +5,9 @@ from typing import Tuple
 from functools import cached_property
 
 class WaveFileAudioSource():
-    def __init__(self, file_path, sample_rate):
+    def __init__(self, file_path):
         self._file_path = file_path
-        self._sample_rate = sample_rate
+        self._sample_rate = 16000
         self._ms_per_chunk = 96
         
     def read(self) -> Tuple[int, bytes]:
