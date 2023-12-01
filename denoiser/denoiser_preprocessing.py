@@ -10,6 +10,7 @@ import plot_gen
 class ExtractedFeatures:
     '''Data class to store extracted features'''
     pitch: float = 0
+    spectral_flux: float = 0
     bfcc: np.ndarray = field(default_factory=np.array)                  # 24 BFCCs
     bfcc_first_derivs: np.ndarray = field(default_factory=np.array)     # First 6 BFCCs
     bfcc_second_derivs: np.ndarray = field(default_factory=np.array)    # First 6 BFCCs
@@ -17,21 +18,21 @@ class ExtractedFeatures:
     
     def __str__(self):
         return f"Pitch: {self.pitch}\n\
-              BFCC: {self.bfcc}\n\
-              BFCC First Derivatives: {self.bfcc_first_derivs}\n\
-              BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
-              Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
-              \n Total Features: {self.count_features()}\n"
+                Spectral Flux: {self.spectral_flux}\n\
+                BFCC: {self.bfcc}\n\
+                BFCC First Derivatives: {self.bfcc_first_derivs}\n\
+                BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
+                Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
+                \n Total Features: {self.count_features()}\n"
               
     def count_features(self):
         total_features = 0
         
+        total_features += 2 # Pitch & Spectral Flux
         total_features += len(self.bfcc)
         total_features += len(self.bfcc_first_derivs)
         total_features += len(self.bfcc_second_derivs)
         total_features += len(self.pitch_correlation_dct)
-        
-        total_features += 1 # Pitch
         
         return total_features
 
@@ -87,6 +88,8 @@ class DenoiserPreprocessing:
         band_indices = self.bark_bands_indices()
         bark_bands = self.bark_bands(windowed_fft, band_indices)
         
+        flux = self.spectral_flux(windowed_fft)
+        
         band_energies = self.compute_band_energies(bark_bands)
         
         bfcc = self.compute_bfcc(band_energies)
@@ -99,10 +102,12 @@ class DenoiserPreprocessing:
         pitch_correlation_dct = self.compute_pitch_dct(pitch_correlation)
         
         return ExtractedFeatures(pitch, 
+                                 flux,
                                  bfcc, 
                                  temporal_derivatives[0][:6], 
                                  temporal_derivatives[1][:6],
-                                 pitch_correlation_dct[:6])
+                                 pitch_correlation_dct[:6]
+                                 )
         
     
     def apply_vorbis_window(self, window) -> np.ndarray:
@@ -228,8 +233,12 @@ class DenoiserPreprocessing:
             pitch_correlation[i] = numerator / denominator
             
         return pitch_correlation
-            
-            
+    
+    def spectral_flux(self, window_fft):
+        '''Compute the spectral flux of the window'''
+        
+        flux = np.sum(np.square(np.diff(np.abs(window_fft))))
+        return flux
             
         
     
