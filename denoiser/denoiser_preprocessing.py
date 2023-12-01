@@ -1,8 +1,39 @@
 import numpy as np
 from typing import Tuple
+from scipy.fft import fft, fftfreq
 from functools import cached_property
-from librosa import feature, pyin
+from librosa import yin
+from dataclasses import dataclass, field
+import plot_gen
 
+@dataclass
+class ExtractedFeatures:
+    '''Data class to store extracted features'''
+    pitch: float = 0
+    bfcc: np.ndarray = field(default_factory=np.array)                  # 24 BFCCs
+    bfcc_first_derivs: np.ndarray = field(default_factory=np.array)     # First 6 BFCCs
+    bfcc_second_derivs: np.ndarray = field(default_factory=np.array)    # First 6 BFCCs
+    pitch_correlation_dct: np.ndarray = field(default_factory=np.array) # First 6 pitch correlations
+    
+    def __str__(self):
+        return f"Pitch: {self.pitch}\n\
+              BFCC: {self.bfcc}\n\
+              BFCC First Derivatives: {self.bfcc_first_derivs}\n\
+              BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
+              Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
+              \n Total Features: {self.count_features()}\n"
+              
+    def count_features(self):
+        total_features = 0
+        
+        total_features += len(self.bfcc)
+        total_features += len(self.bfcc_first_derivs)
+        total_features += len(self.bfcc_second_derivs)
+        total_features += len(self.pitch_correlation_dct)
+        
+        total_features += 1 # Pitch
+        
+        return total_features
 
 class DenoiserPreprocessing:
     '''Preprocessing class for the denoiser'''
@@ -17,8 +48,8 @@ class DenoiserPreprocessing:
         
         self.num_bands = 24
         self.bark_band_scale = [
-        # 0 125 250 375 500 750 875 1k 1.125 1.25 1.375 1.5 1.75 2k 2.25 2.5 3k 3.5 4k 4.5 5.25 6k 7k 8k
-            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 22, 26, 30, 34, 40, 46, 54, 62, 100
+        # 0 125 250 375 500 625 750 875 1k 1.125 1.25 1.5 1.75 2k 2.25 2.5 2.75 3.25k 3.75 4.25k 4.75 5.5 6.25k 7k 8k
+            0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20, 22, 26, 30, 34, 38, 44, 50, 56, 64
         ]
         
     @cached_property
@@ -40,7 +71,39 @@ class DenoiserPreprocessing:
                     self.dct_coefficients_matrix[i, j] = \
                         np.sqrt(2 / self.num_bands) * np.cos((np.pi / self.num_bands) * i * (j + 0.5))
                         
-        return self.dct_coefficients_matrix       
+        return self.dct_coefficients_matrix     
+    
+    def extract_features(self, window) -> ExtractedFeatures:
+        '''Extract features from a window'''
+        pitch = self.detect_pitch(window)
+        pitch_delayed_window = self.delay_window(window, pitch)
+       
+        windowed = self.apply_vorbis_window(window)
+        delayed_windowed = self.apply_vorbis_window(pitch_delayed_window)
+        
+        windowed_fft = fft(windowed)
+        delayed_windowed_fft = fft(delayed_windowed)
+        
+        band_indices = self.bark_bands_indices()
+        bark_bands = self.bark_bands(windowed_fft, band_indices)
+        
+        band_energies = self.compute_band_energies(bark_bands)
+        
+        bfcc = self.compute_bfcc(band_energies)
+        temporal_derivatives = self.compute_bcff_temporal_derivs(bfcc)
+        
+        pitch_delayed_bark_bands = self.bark_bands(delayed_windowed_fft, band_indices)
+        
+        pitch_correlation = self.compute_pitch_correlation(bark_bands, pitch_delayed_bark_bands)
+        
+        pitch_correlation_dct = self.compute_pitch_dct(pitch_correlation)
+        
+        return ExtractedFeatures(pitch, 
+                                 bfcc, 
+                                 temporal_derivatives[0][:6], 
+                                 temporal_derivatives[1][:6],
+                                 pitch_correlation_dct[:6])
+        
     
     def apply_vorbis_window(self, window) -> np.ndarray:
         '''Apply the Vorbis window with 0.5 window overlap'''
@@ -53,27 +116,25 @@ class DenoiserPreprocessing:
             
         return window
     
-    def apply_dct(self, window) -> np.ndarray:
-        return np.dot(self.dct_coefficients_matrix.T, window)
-    
-    def compute_bcff_temporal_derivs(self, bfcc, num=6) -> Tuple[np.ndarray, np.ndarray]:
-        '''Compute the 1st and 2nd temporal derivatives of first 6 BFCCs'''
-        selected = bfcc[:num]
+    def compute_bcff_temporal_derivs(self, bfcc) -> Tuple[np.ndarray, np.ndarray]:
+        '''Compute the 1st and 2nd temporal derivatives of BFCC'''
         
-        first_derivatives = [np.gradient(bfcc) for bfcc in selected]
-        second_derivatives = [np.gradient(first_deriv) for first_deriv in first_derivatives]
+        first_derivatives = np.gradient(bfcc)
+        second_derivatives = np.gradient(first_derivatives)
+        
         return first_derivatives, second_derivatives
         
-    def compute_band_energies(self, window_fft) -> np.ndarray:
+    def compute_band_energies(self, bands) -> np.ndarray:
         '''Calculate the energy in each band'''''
         
-        bark_bands, amplitude = self.bark_bands(window_fft)
-        normalized_bands = self.normalize_amplitude(bark_bands, amplitude)
         band_energies = np.zeros(self.num_bands)
+        total_amplitude = self.get_total_amplitude(bands)
         
         for i in range(self.num_bands - 1):
-            band = normalized_bands[i]
-            power = np.abs(band) ** 2
+            band = bands[i]
+            normalized_amplitude = np.sum(np.abs(band)) / total_amplitude
+            
+            power = (normalized_amplitude) * (np.abs(band) ** 2)
             
             band_size = len(band)
             triang_scale = np.arange(band_size) / band_size
@@ -85,41 +146,90 @@ class DenoiserPreprocessing:
         band_energies[self.num_bands - 1] *= 2
         
         return band_energies
-    
-    def compute_bfcc(self, window_fft):
+
+    def compute_bfcc(self, band_energies):
         '''Compute the Bark frequency cepstral coefficients'''
-        bark_bands, amplitudes = self.bark_bands(window_fft)
-        epsilon = 1e-10     # To avoid log(0)
         
-        return [np.log(np.abs(band) + epsilon) for band in bark_bands]
+        epsilon = 1e-10     # To avoid log(0)
+        log_bark_energies = np.log(band_energies + epsilon)
+        dct_matrix = self.dct_matrix_coefficients
+        
+        bfcc = np.dot(dct_matrix, log_bark_energies)
+        
+        return bfcc
     
-    def bark_bands(self, window_fft):
+    def get_total_amplitude(self, bands):
+        return np.sum([np.sum(np.abs(band)) for band in bands])
+    
+    def bark_bands_indices(self):
+        '''Get the indices of the FFT corresponding to the Bark bands'''
+        
+        band_indices = []
+        
+        for i in range(self.num_bands):
+            band_start = self.bark_band_scale[i] * 4 
+            
+            if i == self.num_bands - 1:
+                band_end = self.bark_band_scale[-1] * 4
+            else:
+                band_end = self.bark_band_scale[i + 1] * 4
+                
+            band_indices.append((band_start, band_end))
+            
+        return band_indices
+    
+    def bark_bands(self, window_fft, band_indices):
         '''Split the FFT into bands according to the Bark scale'''
         
-        bands = []
-        total_amplitude = 0
-        for i in range(self.num_bands - 1):
-            band_start = self.bark_band_scale[i] * 4 
-            band_end = self.bark_band_scale[i + 1] * 4
-            band = list(window_fft[band_start : band_end])
-            
-            bands.append(band)
-            total_amplitude += np.sum(np.abs(band))
-            
-        return bands, total_amplitude
-    
-    def normalize_amplitude(self, bands, total_amplitude):
-        '''Normalize the band amplitudes'''
+        bands = [window_fft[start : end] for start, end in band_indices]
         
-        return [band / total_amplitude for band in bands]
-    
-    def detect_pitch(self, window, threshold = 0.1) -> float:
+        return bands
+        
+    def detect_pitch(self, window) -> float:
         '''Pitch detection based on the YIN algorithm'''
-        pitches, voiced_flag, voiced_probs = pyin(window, 
-                                                  sr=self.sample_rate, 
-                                                  fmin=self.min_pitch, 
-                                                  fmax=self.max_pitch)
-        best_pitch_index = np.argmax(voiced_probs)
+        pitches = yin(window, 
+                      sr=self.sample_rate, 
+                      fmin=self.min_pitch, 
+                      fmax=self.max_pitch, 
+                      frame_length=self.window_size)
+        
+        best_pitch_index = np.argmin(pitches)
         
         return pitches[best_pitch_index]
+    
+    def delay_window(self, window, pitch):
+        '''Delay the window by the pitch'''
+        pitch_period = int(self.sample_rate / pitch)
+        
+        return np.roll(window, pitch_period)
+    
+    def compute_pitch_dct(self, pitch_correlation):
+        dct_matrix = self.dct_matrix_coefficients
+        
+        pitch_correlation_dct = np.dot(dct_matrix, pitch_correlation)
+        return pitch_correlation_dct
+    
+    def compute_pitch_correlation(self, bands, pitch_delayed_bands):
+        '''Compute the pitch correlation for each band'''
+        
+        pitch_correlation = np.zeros(self.num_bands)
+        total_amplitude = self.get_total_amplitude(bands)
+        
+        for i in range (self.num_bands - 1):
+            band = bands[i]
+            normalized_amplitude = np.sum(np.abs(band)) / total_amplitude
+            
+            delayed_band = pitch_delayed_bands[i]
+            
+            numerator = np.sum(normalized_amplitude * np.real(band * np.conjugate(delayed_band)))
+            denominator = np.sqrt(np.sum(normalized_amplitude * (np.abs(band) ** 2)) 
+                                  * np.sum(normalized_amplitude * (np.abs(delayed_band) ** 2)))
+            
+            pitch_correlation[i] = numerator / denominator
+            
+        return pitch_correlation
+            
+            
+            
+        
     
