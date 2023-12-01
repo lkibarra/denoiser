@@ -5,6 +5,7 @@ from scipy.signal import butter, lfilter
 from functools import cached_property
 from librosa import yin
 from dataclasses import dataclass, field
+from pprint import pformat
 
 @dataclass
 class ExtractedFeatures:
@@ -19,10 +20,10 @@ class ExtractedFeatures:
     def __str__(self):
         return f"Pitch: {self.pitch}\n\
                 Spectral Flux: {self.spectral_flux}\n\
-                BFCC: {self.bfcc}\n\
-                BFCC First Derivatives: {self.bfcc_first_derivs}\n\
-                BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
-                Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
+                BFCC: {pformat(self.bfcc)}\n\
+                BFCC First Derivatives: {pformat(self.bfcc_first_derivs)}\n\
+                BFCC Second Derivatives: {pformat(self.bfcc_second_derivs)}\n\
+                Pitch Correlation DCT: {pformat(self.pitch_correlation_dct)}\n\
                 \n Total Features: {self.count_features()}\n"
               
     def count_features(self):
