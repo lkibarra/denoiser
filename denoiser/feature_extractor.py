@@ -1,6 +1,6 @@
 import numpy as np
 from typing import Tuple
-from scipy.fft import fft, fftfreq
+from scipy.fft import fft
 from scipy.signal import butter, lfilter
 from functools import cached_property
 from librosa import yin
@@ -37,8 +37,8 @@ class ExtractedFeatures:
         
         return total_features
 
-class DenoiserPreprocessing:
-    '''Preprocessing class for the denoiser'''
+class FeatureExtractor:
+    '''Feature extractor for denoising'''
     
     def __init__(self, sample_rate=16000, chunk_size=1536, window_size=512, min_pitch=60, max_pitch=800):
         self.sample_rate = sample_rate

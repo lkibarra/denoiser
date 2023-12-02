@@ -4,16 +4,16 @@ import queue
 import wave
 import librosa 
 from audio_source import WaveFileAudioSource
-from denoiser_preprocessing import DenoiserPreprocessing
+from feature_extractor import FeatureExtractor
 import plot_gen
 
     
 class Denoiser():
     def __init__(self):
-        self.denoise_preprocessor = DenoiserPreprocessing()
+        self.feature_extractor = FeatureExtractor()
         
     def split_chunk(self, chunk: np.ndarray) -> np.ndarray:
-        return np.split(chunk, self.denoise_preprocessor.chunk_size / self.denoise_preprocessor.window_size)
+        return np.split(chunk, self.feature_extractor.chunk_size / self.feature_extractor.window_size)
     
     def denoise_lms(self, chunk: np.ndarray) -> np.ndarray:
         split_chunk = self.split_chunk(chunk)
@@ -84,8 +84,8 @@ def main(input_path, output_path, algorithm, plot):
             chunk = audio_queue.get(block=False)
             chunk_int16 = np.copy(np.frombuffer(chunk, dtype=np.int16))
             
-            if len(chunk) < DenoiserPreprocessing.CHUNK_SIZE:
-                chunk_int16 = np.pad(chunk_int16, (0, denoiser.denoise_preprocessor.CHUNK_SIZE - len(chunk_int16)))
+            if len(chunk) < denoiser.feature_extractor.CHUNK_SIZE:
+                chunk_int16 = np.pad(chunk_int16, (0, denoiser.feature_extractor.CHUNK_SIZE - len(chunk_int16)))
             
             original.append(chunk_int16)
             
