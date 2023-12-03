@@ -12,7 +12,7 @@ from feature_extractor import FeatureExtractor
  
 def train_one_epoch(model, dataset_generator, feature_extractor, loss_fn, optimizer): 
     for clean_waveform, noise_waveform, augmented_waveform in dataset_generator:
-        model_input = torch.cat((clean_waveform, noise_waveform), dim=0)
+        model_input = torch.cat((clean_waveform, noise_waveform), dim=0)    # Want to input the bark band gains of the clean and noise waveforms
         predictions = model(model_input)
         loss = loss_fn(predictions, augmented_waveform)
         
