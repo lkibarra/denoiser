@@ -67,12 +67,11 @@ class RNN(nn.Module):
         return torch.zeros(1, self.hidden_size)
 
     
-def train_one_epoch(model, dataset_gen, loss_fn, optimizer):
-    for i, (inputs, targets) in enumerate(dataset_gen.get):
-        inputs, targets = inputs.to(device), targets.to(device) 
-        
-        predictions = model(inputs) # Outputs
-        loss = loss_fn(predictions, targets)
+def train_one_epoch(model, dataset_generator, loss_fn, optimizer):
+    for clean_waveform, noise_waveform, augmented_waveform in dataset_generator:
+        model_input = torch.cat((clean_waveform, noise_waveform), dim=0)
+        predictions = model(model_input)
+        loss = loss_fn(predictions, augmented_waveform)
         
         optimizer.zero_grad()
         loss.backward()
@@ -80,10 +79,10 @@ def train_one_epoch(model, dataset_gen, loss_fn, optimizer):
         
         print(f'Loss: {loss.item()}')
 
-def train(model, dataset_gen, loss_fn, optimizer, device, num_epochs):
+def train(model, dataset_generator, loss_fn, optimizer, device, num_epochs):
     for i in range(num_epochs):
         print(f'Epoch {i + 1}')
-        train_one_epoch(model, dataset_gen, loss_fn, optimizer, device)
+        train_one_epoch(model, dataset_generator, loss_fn, optimizer, device)
         print('-----------------')
         
     print('Finished training.')
@@ -112,14 +111,14 @@ if __name__ == "__main__":
     noise_dir = os.path.join(project_path, 'data', 'noise', 'aircraft')
     aug_dir = os.path.join(project_path, 'data', 'augmented')
     
-    dataset_gen = DatasetGenerator(clean_dir, noise_dir, aug_dir)
+    dataset_generator = DatasetGenerator(clean_dir, noise_dir, aug_dir)
         
     model = RNN(input_size, hidden_size, num_layers, output_size)
     
     loss_fn = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    train(model, dataset_gen, loss_fn, optimizer, device, num_epochs)
+    train(model, dataset_generator, loss_fn, optimizer, device, num_epochs)
 
     torch.save(model.state_dict(), 'model.pth')
     
