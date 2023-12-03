@@ -6,7 +6,8 @@ from audio_source import WaveFileAudioSource
 from feature_extractor import FeatureExtractor
 
 class Denoiser():
-    def __init__(self):
+    def __init__(self, audio_source=None):
+        self.audio_source = audio_source
         self.feature_extractor = FeatureExtractor(sample_rate=16000, 
                                                   chunk_size=1536, 
                                                   window_size=512, 
@@ -51,18 +52,6 @@ class Denoiser():
     # def apply_pitch_filter(self, band_filter_coeff):
         
 def main(input_path, output_path, algorithm, plot):
-    # Sine wave signal
-    # t = np.arange(0, 0.48, 1/denoiser.denoise_preprocessor.sample_rate)
-    # envelope = lambda t: np.exp(-t)
-    # sin_signal = envelope(t) * np.sin(2 * np.pi * 100 * t)
-    
-    # num_chunks = int(len(sin_signal) / denoiser.denoise_preprocessor.chunk_size)
-    # sin_signal_chunks = np.split(sin_signal, num_chunks)    # Audio queue will already contain chunks
-    
-    # for chunk in sin_signal_chunks:
-    #     split_chunk = denoiser.split_chunk(chunk)
-    #     denoiser.analyze_windows(split_chunk)
-    
     denoiser = Denoiser()
     
     if algorithm == 'lms':
