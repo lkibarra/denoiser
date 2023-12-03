@@ -16,14 +16,14 @@ class SampleFileInfo:
     original_file_path: Path
     noise_file_name: str
     noise_file_path: Path
-    augmented_file_path: Optional[Path] = None
+    combined_file_path: Optional[Path] = None
     denoised_file_path: Optional[Path] = None
 
 class DatasetGenerator(torch.utils.data.Dataset):
-    def __init__(self, sample_dir, noise_dir, aug_dir):
-        self.sample_dir = sample_dir
-        self.noise_dir = noise_dir
-        self.aug_dir = aug_dir
+    def __init__(self, clean_sample_dir, noise_sample_dir, combined_sample_dir):
+        self.clean_sample_dir = clean_sample_dir
+        self.noise_sample_dir = noise_sample_dir
+        self.combined_sample_dir = combined_sample_dir
         
         self.samples = self.generate_samples_info()
         
@@ -37,16 +37,16 @@ class DatasetGenerator(torch.utils.data.Dataset):
     def __iter__(self):
         for sample in self.samples:
             # print(f"Getting audio sample: \n\
-            #     Clean file name: {sample.original_file_name} \n\
-            #     Clean file path: {sample.original_file_path} \n\
-            #     Noise file name: {sample.noise_file_name} \n\
-            #     Noise file path: {sample.noise_file_path} \n\
-            #     Augmented file path: {sample.augmented_file_path}")
+            #     Clean signal file name: {sample.original_file_name} \n\
+            #     Clean signal file path: {sample.original_file_path} \n\
+            #     Noise signal file name: {sample.noise_file_name} \n\
+            #     Noise signal file path: {sample.noise_file_path} \n\
+            #     Combined signal file path: {sample.combined_file_path}")
             
             clean_waveform, noise_waveform = self.format_audio(sample)
-            augmented_waveform = self.apply_noise(clean_waveform, noise_waveform)
+            combined_waveform = self.apply_noise(clean_waveform, noise_waveform)
             
-            yield clean_waveform, noise_waveform, augmented_waveform
+            yield clean_waveform, noise_waveform, combined_waveform
  
     def apply_noise(self, clean_waveform, noise_waveform, mixing_ratio=0.4):
         '''Apply noise to a clean waveform'''
@@ -64,13 +64,14 @@ class DatasetGenerator(torch.utils.data.Dataset):
         
         for dir_path, _, filenames in os.walk(self.sample_dir):
             # for name in filenames:
+            
             for i, name in enumerate(filenames):
-                if i >= 1: 
+                if i >= 1:  # For testing purposes, only generate one sample
                     break
                 
                 if name.endswith(f".wav"):
-                    new_dir_path = dir_path.replace(str(self.sample_dir), str(self.aug_dir))
-                    aug_file_path = os.path.join(new_dir_path, name)
+                    new_dir_path = dir_path.replace(str(self.sample_dir), str(self.combined_sample_dir))
+                    combined_file_path = os.path.join(new_dir_path, name)
                     
                     noise_path = self.get_random_noise_file()
                     noise_name = os.path.basename(noise_path)
@@ -81,7 +82,7 @@ class DatasetGenerator(torch.utils.data.Dataset):
                                             Path(sample_path), 
                                             noise_name, 
                                             Path(noise_path), 
-                                            Path(aug_file_path))
+                                            Path(combined_file_path))
                         
     def get_random_noise_file(self) -> Path:
         files = [f for f in os.listdir(self.noise_dir) if os.path.isfile(os.path.join(self.noise_dir, f))]
