@@ -25,27 +25,28 @@ class DatasetGenerator(torch.utils.data.Dataset):
         self.noise_dir = noise_dir
         self.aug_dir = aug_dir
         
-        self.samples = list(self.generate_samples_info())
+        self.samples = self.generate_samples_info()
         
     def __len__(self):
         return len(self.samples)
     
-    def __getitem__(self, idx):
-        sample = self.samples[idx]
-        
-        # print(f"Getting audio sample: \n\
+    def __next__(self):
+        next_sample = next(self.samples)
+        return next_sample
+    
+    def __iter__(self):
+        for sample in self.samples:
+            # print(f"Getting audio sample: \n\
             #     Clean file name: {sample.original_file_name} \n\
             #     Clean file path: {sample.original_file_path} \n\
             #     Noise file name: {sample.noise_file_name} \n\
             #     Noise file path: {sample.noise_file_path} \n\
             #     Augmented file path: {sample.augmented_file_path}")
-        
-        clean_waveform, noise_waveform = self.format_audio(sample)
-        
-        augmented_waveform = self.apply_noise(clean_waveform, noise_waveform)
-        
-        return clean_waveform, noise_waveform, augmented_waveform
-    
+            
+            clean_waveform, noise_waveform = self.format_audio(sample)
+            augmented_waveform = self.apply_noise(clean_waveform, noise_waveform)
+            
+            yield clean_waveform, noise_waveform, augmented_waveform
  
     def apply_noise(self, clean_waveform, noise_waveform, mixing_ratio=0.4):
         '''Apply noise to a clean waveform'''
