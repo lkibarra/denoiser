@@ -5,7 +5,6 @@ from scipy.signal import butter, lfilter
 from functools import cached_property
 from librosa import yin
 from dataclasses import dataclass, field
-from pprint import pformat
 
 @dataclass
 class ExtractedFeatures:
@@ -20,10 +19,10 @@ class ExtractedFeatures:
     def __str__(self):
         return f"Pitch: {self.pitch}\n\
                 Spectral Flux: {self.spectral_flux}\n\
-                BFCC: {pformat(self.bfcc)}\n\
-                BFCC First Derivatives: {pformat(self.bfcc_first_derivs)}\n\
-                BFCC Second Derivatives: {pformat(self.bfcc_second_derivs)}\n\
-                Pitch Correlation DCT: {pformat(self.pitch_correlation_dct)}\n\
+                BFCC: {self.bfcc}\n\
+                BFCC First Derivatives: {self.bfcc_first_derivs}\n\
+                BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
+                Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
                 \n Total Features: {self.count_features()}\n"
               
     def count_features(self):
@@ -40,7 +39,7 @@ class ExtractedFeatures:
 class FeatureExtractor:
     '''Feature extractor for denoising'''
     
-    def __init__(self, sample_rate=16000, chunk_size=1536, window_size=512, min_pitch=60, max_pitch=800):
+    def __init__(self, sample_rate, chunk_size, window_size, min_pitch, max_pitch):
         self.sample_rate = sample_rate
         self.chunk_size = chunk_size
         self.window_size = window_size
