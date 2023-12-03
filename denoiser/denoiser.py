@@ -1,16 +1,17 @@
 import argparse
 import numpy as np
 import queue
-import wave
 import librosa 
 from audio_source import WaveFileAudioSource
 from feature_extractor import FeatureExtractor
-import plot_gen
 
-    
 class Denoiser():
     def __init__(self):
-        self.feature_extractor = FeatureExtractor()
+        self.feature_extractor = FeatureExtractor(sample_rate=16000, 
+                                                  chunk_size=1536, 
+                                                  window_size=512, 
+                                                  min_pitch=60, 
+                                                  max_pitch=800)
         
     def split_chunk(self, chunk: np.ndarray) -> np.ndarray:
         return np.split(chunk, self.feature_extractor.chunk_size / self.feature_extractor.window_size)
