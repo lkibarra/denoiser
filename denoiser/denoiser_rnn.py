@@ -6,7 +6,7 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f'Using {device} device')
 
 # Hyperparameters
-input_size = 44
+input_size = 44     # 44 input features
 sequence_length = 1
 hidden_size = 24
 num_layers = 4
@@ -15,7 +15,7 @@ num_epochs = 2
 batch_size = 1
 learning_rate = 0.01
 
-band_mapping = {i: f"Bark Band {i}" for i in range(24)}
+band_mapping = {i: f"Bark Band Gains {i}" for i in range(24)}
 
 class DenoiserRNN(nn.Module):
     '''Fully connected neural network with four hidden layer'''
@@ -27,9 +27,9 @@ class DenoiserRNN(nn.Module):
         gru_hidden_2 = hidden_size * 2
         gru_hidden_3 = hidden_size * 4
         
-        # input_data -> (batch_size, seq_length, feature_size)
+        # input_data -> (batch_size, seq_length, feature_size)  What is the batch size and sequence length?
         
-        self.dense_in = nn.Linear(input_size, gru_hidden_1)
+        self.dense_in = nn.Linear(input_size, gru_hidden_1) # Is the setup of the layers correct?
         
         self.gru_layers = [
             nn.GRU(gru_hidden_1, gru_hidden_1, batch_first=True),
@@ -55,11 +55,12 @@ class DenoiserRNN(nn.Module):
             out, h0 = self.gru_layers[i](out, h0)
             out = self.relu(out)
         
-        out = out[:, -1, :]
-        out = self.sigmoid(self.dense_out(out))
         # output_data -> (batch_size, seq_length, hidden_size)
+        
+        out = out[:, -1, :] # How do we obtain the output from the last layer? Need the 22 band gains
+        out = self.sigmoid(self.dense_out(out))
         
         return out
       
-    def init_hidden(self):
-        return torch.zeros(1, self.hidden_size)
+    def init_hidden(self):  # Is this needed?
+        return torch.zeros(1, self.hidden_size) 

@@ -4,8 +4,13 @@ import torch.nn as nn
 import denoiser_rnn 
 from dataset_generator import DatasetGenerator
 from denoiser import Denoiser
+from audio_source import WaveFileAudioSource
+from feature_extractor import FeatureExtractor
 
-def train_one_epoch(model, dataset_generator, loss_fn, optimizer):
+ # How do we train the model with the denoiser and feature extractor class?
+ # How do I pass the output of the feature extractor to the rnn?
+ 
+def train_one_epoch(model, dataset_generator, feature_extractor, loss_fn, optimizer): 
     for clean_waveform, noise_waveform, augmented_waveform in dataset_generator:
         model_input = torch.cat((clean_waveform, noise_waveform), dim=0)
         predictions = model(model_input)
@@ -40,13 +45,14 @@ def predict(model, input, target, band_mapping):
     
     return predicted, expected
 
-# TODO: Define own loss function
+# TODO: Define own loss function based on RNNoise paper
 def loss_fn(gamma=0.5):
     # loss_fn = (estimated_band_gains ^ gamma) - (ideal_band_gains ^ gamma), where gamma = 0.5
     pass
-
         
 if __name__ == "__main__":
+    # Should the training loop be in this file or in denoiser_rnn.py?
+    # Should the training be done from the main function or from this seperate function?
     
     project_path = os.getcwd()
     
@@ -56,6 +62,7 @@ if __name__ == "__main__":
     
     dataset_generator = DatasetGenerator(clean_dir, noise_dir, aug_dir)
     
+    # How can I load the first sample files (clean, noise, combined) into the denoiser queue to chunk the audio?
     sample_file_info = next(dataset_generator)
     
     denoiser = Denoiser()
@@ -67,7 +74,8 @@ if __name__ == "__main__":
                 denoiser_rnn.output_size
     )
     
-    loss_fn = nn.CrossEntropyLoss() # should define own loss function based on gain estimates and ground truth gains
+    # Should define own loss function based on gain estimates and ground truth gains
+    loss_fn = nn.CrossEntropyLoss() # For now, use cross entropy loss
     
     optimizer = torch.optim.Adam(model.parameters(), lr=denoiser_rnn.learning_rate)
 
