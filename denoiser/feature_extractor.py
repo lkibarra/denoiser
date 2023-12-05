@@ -1,5 +1,5 @@
 import numpy as np
-from typing import Tuple
+import torch
 from scipy.fft import fft
 from scipy.signal import butter, lfilter
 from functools import cached_property
@@ -10,21 +10,36 @@ from dataclasses import dataclass, field
 class ExtractedFeatures:
     '''Data class to store extracted features'''
     pitch: float = 0
-    spectral_flux: float = 0
     bfcc: np.ndarray = field(default_factory=np.array)                  # 24 BFCCs
     bfcc_first_derivs: np.ndarray = field(default_factory=np.array)     # First 6 BFCCs
     bfcc_second_derivs: np.ndarray = field(default_factory=np.array)    # First 6 BFCCs
     pitch_correlation_dct: np.ndarray = field(default_factory=np.array) # First 6 pitch correlations
-    
+    spectral_flux: float = 0
+        
     def __str__(self):
         return f"Pitch: {self.pitch}\n\
-                Spectral Flux: {self.spectral_flux}\n\
                 BFCC: {self.bfcc}\n\
                 BFCC First Derivatives: {self.bfcc_first_derivs}\n\
                 BFCC Second Derivatives: {self.bfcc_second_derivs}\n\
                 Pitch Correlation DCT: {self.pitch_correlation_dct}\n\
-                \n Total Features: {self.count_features()}\n"
-              
+                Spectral Flux: {self.spectral_flux}\n\
+                Total Features: {self.count_features()}\n"
+                
+    def to_tensor(self):
+        '''Convert the ExtractedFeatures object to a tensor'''
+        pitch = torch.tensor([self.pitch])
+        bfcc = torch.FloatTensor(self.bfcc)
+        bfcc_first_derivs = torch.FloatTensor(self.bfcc_first_derivs)
+        bfcc_second_derivs = torch.FloatTensor(self.bfcc_second_derivs)
+        pitch_correlation_dct = torch.FloatTensor(self.pitch_correlation_dct)
+        spectral_flux = torch.tensor([self.spectral_flux])
+        return torch.cat((pitch, 
+                          bfcc, 
+                          bfcc_first_derivs, 
+                          bfcc_second_derivs, 
+                          pitch_correlation_dct,
+                          spectral_flux))
+        
     def count_features(self):
         total_features = 0
         
@@ -76,6 +91,7 @@ class FeatureExtractor:
     
     def extract_features(self, window) -> ExtractedFeatures:
         '''Extract features from a window'''
+        
         lpf_window = self.apply_butter_lowpass(window)
         
         pitch = self.detect_pitch(lpf_window)
@@ -103,13 +119,14 @@ class FeatureExtractor:
         
         pitch_correlation_dct = self.compute_pitch_dct(pitch_correlation)
         
-        return ExtractedFeatures(pitch, 
-                                 flux,
-                                 bfcc, 
-                                 temporal_derivatives[0][:6], 
-                                 temporal_derivatives[1][:6],
-                                 pitch_correlation_dct[:6]
-                                 )
+        extracted = ExtractedFeatures(pitch, 
+                                      bfcc,
+                                      temporal_derivatives[0][:6],
+                                      temporal_derivatives[1][:6],
+                                      pitch_correlation_dct[:6],
+                                      flux
+                                      )
+        return extracted.to_tensor()
         
     
     def apply_vorbis_window(self, window) -> np.ndarray:
@@ -123,7 +140,7 @@ class FeatureExtractor:
             
         return window
     
-    def compute_bcff_temporal_derivs(self, bfcc) -> Tuple[np.ndarray, np.ndarray]:
+    def compute_bcff_temporal_derivs(self, bfcc) -> tuple[np.ndarray, np.ndarray]:
         '''Compute the 1st and 2nd temporal derivatives of BFCC'''
         
         first_derivatives = np.gradient(bfcc)
@@ -133,9 +150,9 @@ class FeatureExtractor:
     
     def calculate_per_band_gain(self, clean_band_energy, noisy_band_energy):
         gains = np.zeros(self.num_bands)
-        
+        epsilon = 1e-10     # To avoid division by 0
         for i in range(self.num_bands):
-            gains[i] = np.sqrt(clean_band_energy[i] / noisy_band_energy[i])
+            gains[i] = np.sqrt(clean_band_energy[i] / (noisy_band_energy[i] + epsilon))
             
         return gains
             
@@ -145,10 +162,11 @@ class FeatureExtractor:
         
         band_energies = np.zeros(self.num_bands)
         total_amplitude = self.get_total_amplitude(bands)
+        epsilon = 1e-10
         
         for i in range(self.num_bands - 1):
             band = bands[i]
-            normalized_amplitude = np.sum(np.abs(band)) / total_amplitude
+            normalized_amplitude = np.sum(np.abs(band)) / (total_amplitude + epsilon)
             
             power = (normalized_amplitude) * (np.abs(band) ** 2)
             
@@ -260,13 +278,10 @@ class FeatureExtractor:
         
         return filtered_window_fft
     
-    def butter_lowpass(self, cutoff=8000, order=4):
+    def butter_lowpass(self, order=4):
         '''Butterworth lowpass filter'''
         
-        nyquist = 0.5 * self.sample_rate
-        normal_cutoff = cutoff / nyquist
-        
-        num, den = butter(order, normal_cutoff, btype='low', analog=False)
+        num, den = butter(order, 0.9999, btype='low', analog=False)
         
         return num, den
         
