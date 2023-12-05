@@ -1,18 +1,12 @@
 import torch
 import torch.nn as nn
 
-# Device Configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-print(f'Using {device} device')
-
 # Hyperparameters
 input_size = 44     # 44 input features
-sequence_length = 1
-hidden_size = 24
+output_size = 24    # 24 bark band gains
 num_layers = 4
-output_size = 24
-num_epochs = 2
-batch_size = 1
+num_epochs = 120
+batch_size = 32
 learning_rate = 0.01
 
 band_mapping = {i: f"Bark Band Gains {i}" for i in range(24)}
@@ -20,25 +14,15 @@ band_mapping = {i: f"Bark Band Gains {i}" for i in range(24)}
 class DenoiserRNN(nn.Module):
     '''Fully connected neural network with four hidden layer'''
     
-    def __init__(self, input_size, hidden_size, num_layers, output_size):
+    def __init__(self, input_size, output_size, hidden_size=24, num_layers=4):
         super(DenoiserRNN, self).__init__()
-        
-        gru_hidden_1 = hidden_size
-        gru_hidden_2 = hidden_size * 2
-        gru_hidden_3 = hidden_size * 4
-        
-        # input_data -> (batch_size, seq_length, feature_size)  What is the batch size and sequence length?
-        
-        self.dense_in = nn.Linear(input_size, gru_hidden_1) # Is the setup of the layers correct?
-        
-        self.gru_layers = [
-            nn.GRU(gru_hidden_1, gru_hidden_1, batch_first=True),
-            nn.GRU(gru_hidden_1, gru_hidden_2, batch_first=True),
-            nn.GRU(gru_hidden_2, gru_hidden_3, batch_first=True)
-        ]
 
-        self.dense__out = nn.Linear(gru_hidden_3, output_size)
-        
+        self.dense_input_layer = nn.Linear(input_size, 24)
+        self.gru_1_layer = nn.GRU(input_size=24, hidden_size=24, batch_first=True)
+        self.gru_2_layer = nn.GRU(input_size=92, hidden_size=48, batch_first=True)
+        self.gru_3_layer = nn.GRU(input_size=116, hidden_size=96, batch_first=True)
+        self.dense_out_layer = nn.Linear(96, output_size)
+
         self.tanh = nn.Tanh()
         self.relu = nn.ReLU()
         self.sigmoid = nn.Sigmoid()
@@ -47,20 +31,46 @@ class DenoiserRNN(nn.Module):
         
     def forward(self, input_data):
         input_data = input_data.float()
-        out = self.tanh(self.dense_in(input_data))
         
-        h0 = torch.zeros(self.num_layers, out.size(0), self.hidden_size).to(device)
+        vad_dense_out = self.tanh(self.dense_input_layer(input_data))
+        vad_dense_out.requires_grad_(True)
         
-        for i in range(len(self.gru_layers)):
-            out, h0 = self.gru_layers[i](out, h0)
-            out = self.relu(out)
+        # print(f'VAD Dense Out: {vad_dense_out.shape},\
+        #     requires_grad: {vad_dense_out.requires_grad}\
+        #     VAD Dense Out dtype: {vad_dense_out.dtype}')
         
-        # output_data -> (batch_size, seq_length, hidden_size)
+        vad_gru_out_raw, _ = self.gru_1_layer(vad_dense_out)    #1x24
+        vad_gru_out = self.relu(vad_gru_out_raw)
+        vad_gru_out.requires_grad_(True)
         
-        out = out[:, -1, :] # How do we obtain the output from the last layer? Need the 22 band gains
-        out = self.sigmoid(self.dense_out(out))
+        # print(f'VAD GRU Out: {vad_gru_out.shape},\
+        #     requires_grad: {vad_gru_out.requires_grad},\
+        #     VAD GRU Out dtype: {vad_gru_out.dtype}')
+        
+        noise_estimate_input = torch.cat((input_data, vad_dense_out, vad_gru_out), dim=1)
+        noise_estimate_out_raw, _ = self.gru_2_layer(noise_estimate_input)    #1x92
+        noise_estimate_out = self.relu(noise_estimate_out_raw)
+        noise_estimate_out.requires_grad_(True)
+        
+        # print(f'Noise Estimate Out: {noise_estimate_out.shape},\
+        #     requires_grad: {noise_estimate_out.requires_grad},\
+        #     dtype: {noise_estimate_out.dtype}')
+        
+        band_gains_input = torch.cat((input_data, vad_gru_out, noise_estimate_out), dim=1)  #1x116
+        band_gains_out_raw, _ = self.gru_3_layer(band_gains_input)
+        band_gains_out = self.relu(band_gains_out_raw)
+        band_gains_out.requires_grad_(True)
+        
+        # print(f'Band Gains Out: {band_gains_out.shape},\
+        #     requires_grad: {band_gains_out.requires_grad},\
+        #     dtype: {band_gains_out.dtype}')
+        
+        out = self.sigmoid(self.dense_out_layer(band_gains_out))
+        out.requires_grad_(True)
         
         return out
-      
-    def init_hidden(self):  # Is this needed?
-        return torch.zeros(1, self.hidden_size) 
+    
+    
+    
+    
+        
