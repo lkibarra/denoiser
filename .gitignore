@@ -1,5 +1,6 @@
 # Training Data
 data/
+run/
 
 # Tests
 tests/
