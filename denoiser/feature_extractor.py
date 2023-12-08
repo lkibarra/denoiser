@@ -117,6 +117,10 @@ class FeatureExtractor:
         
         pitch_correlation = self.compute_pitch_correlation(bark_bands, pitch_delayed_bark_bands)
         
+        target_band_gains = self.calculate_per_band_gain(band_energies, noise_band_energies)
+        pitch_filter_coeff = self.compute_pitch_filter_coeff(pitch_correlation, target_band_gains)
+        pitch_filtered_window = self.apply_pitch_filter(windowed_fft, delayed_windowed_fft, pitch_filter_coeff)
+        
         pitch_correlation_dct = self.compute_pitch_dct(pitch_correlation)
         
         extracted = ExtractedFeatures(pitch, 
@@ -152,7 +156,8 @@ class FeatureExtractor:
         gains = np.zeros(self.num_bands)
         epsilon = 1e-10     # To avoid division by 0
         for i in range(self.num_bands):
-            gains[i] = np.sqrt(clean_band_energy[i] / (noisy_band_energy[i] + epsilon))
+            gain_raw = np.sqrt(clean_band_energy[i] / (noisy_band_energy[i] + epsilon))
+            gains[i] = np.clip(gain_raw, 0, 1)
             
         return gains
             
@@ -264,6 +269,18 @@ class FeatureExtractor:
             
         return pitch_correlation
     
+    def compute_pitch_filter_coeff(self, pitch_corr, per_band_gains):
+        pitch_filter_coeff = np.zeros(24)
+        for i in range(24):
+            numerator = pitch_corr[i] * (1 - per_band_gains[i]**2)
+            denominator = (1 - pitch_corr[i]**2) * per_band_gains[i]**2
+            
+            pitch_filter_coeff[i] = np.min(np.sqrt(numerator / denominator), 1)
+        return pitch_filter_coeff
+    
+    def apply_pitch_filter(self, window_fft, delayed_window_fft, pitch_filter_coeff):
+        return window_fft + pitch_filter_coeff * delayed_window_fft
+    
     def spectral_flux(self, window_fft):
         '''Compute the spectral flux of the window'''
         
@@ -284,4 +301,11 @@ class FeatureExtractor:
         num, den = butter(order, 0.9999, btype='low', analog=False)
         
         return num, den
+    
+    def iterpolate_band_gains(self, bands, band_gains):
+        result = np.zeros(len(bands))
+        for i in bands:
+            result[i] = bands[i] * band_gains[i]
+        return result
+    
         

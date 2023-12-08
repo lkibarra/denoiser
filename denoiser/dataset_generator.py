@@ -5,7 +5,7 @@ import torch
 import torchaudio
 import torch.nn.functional as F
 from pathlib import Path
-from typing import Generator, Optional
+from typing import Optional
 from dataclasses import dataclass
 from feature_extractor import FeatureExtractor
 
@@ -38,10 +38,12 @@ class DatasetGenerator(torch.utils.data.Dataset):
         self.samples = self.generate_samples_info()
         
     def __len__(self):
-        return len(list(self.samples))
+        return len(self.samples)
     
-    def __iter__(self):
-        for sample in self.samples:
+    def __getitem__(self, idx):
+        sample = self.samples[idx]
+        
+        # for sample in self.samples:
             # print(f"Getting audio sample: \n\
             #     Clean signal file name: {sample.original_file_name} \n\
             #     Clean signal file path: {sample.original_file_path} \n\
@@ -49,21 +51,22 @@ class DatasetGenerator(torch.utils.data.Dataset):
             #     Noise signal file path: {sample.noise_file_path} \n\
             #     Combined signal file path: {sample.combined_file_path}")
             
-            clean_waveform, noise_waveform = self.format_audio(sample)
-            
-            expected_band_gains = self.compute_ideal_band_gains(clean_waveform, noise_waveform)
-
-            combined_waveform = self.apply_noise(clean_waveform, noise_waveform)
-            combined_waveform_windows = self.split_waveform(combined_waveform)
-            
-            vad_features = [self.get_vad_features(window) for window in combined_waveform_windows]
-            dsp_features = [self.get_dsp_features(window) for window in combined_waveform_windows]
-           
-            dsp_features = torch.stack(dsp_features)
-            vad_features = torch.stack(vad_features)    
-            expected_band_gains = torch.from_numpy(expected_band_gains)
-            
-            yield dsp_features, vad_features, expected_band_gains
+        clean_waveform, noise_waveform = self.format_audio(sample)
+        combined_waveform = self.apply_noise(clean_waveform, noise_waveform)
+        
+        clean_waveform_windows = self.split_waveform(clean_waveform)
+        noise_waveform_windows = self.split_waveform(noise_waveform)
+        combined_waveform_windows = self.split_waveform(combined_waveform)
+        
+        dsp_features = [self.get_dsp_features(combined_window) for combined_window in combined_waveform_windows]
+        target_vad = [self.get_vad_features(combined_window) for combined_window in combined_waveform_windows]
+        target_band_gains = [self.get_target_band_gains(clean_window, noise_window) for clean_window, noise_window in zip(clean_waveform_windows, noise_waveform_windows)]
+        
+        return dsp_features, target_vad, target_band_gains
+        
+    def __iter__(self):
+        for idx in range(len(self)):
+            yield self.__getitem__(idx)
 
     def split_waveform(self, waveform):
         '''Split a waveform into 32ms windows'''
@@ -74,7 +77,7 @@ class DatasetGenerator(torch.utils.data.Dataset):
         if windows[-1].shape[1] < self.dsp_feature_extractor.window_size:
             pad_size = self.dsp_feature_extractor.window_size - windows[-1].shape[1]
             windows[-1] = F.pad(windows[-1], (0, pad_size))
-        
+            
         return tuple(windows)
         
     def load_vad_model(self):
@@ -83,45 +86,43 @@ class DatasetGenerator(torch.utils.data.Dataset):
         return torch.hub.load(repo_or_dir='snakers4/silero-vad', 
                               model='silero_vad',
                               force_reload=True)
+        
+    def get_dsp_features(self, window):
+        '''Get the DSP features for a window'''
+        
+        window = window.squeeze()
+        extracted_features = self.dsp_feature_extractor.extract_features(window).unsqueeze(0)
+        
+        return extracted_features
     
-    def get_vad_features(self, waveform):
+    def get_vad_features(self, window):
         '''Get the VAD features for a waveform'''
         
         with torch.no_grad():
-            vad_features = self.vad_model(waveform, sample_rate)
+            vad_vals = self.vad_model(window, sample_rate)
             
-        return vad_features
+        return vad_vals
     
-    def get_dsp_features(self, waveform):
-        '''Get the DSP features for a waveform'''
-        waveform = waveform.squeeze()
+    def get_target_band_gains(self, clean_window, noise_window):
+        '''Get the target band gains for a window'''
         
-        return self.dsp_feature_extractor.extract_features(waveform)
-    
-    def compute_ideal_band_gains(self, clean_waveform, noisy_waveform):
-        '''Compute the ideal per-band gains for a waveform'''
-        clean_waveform_windows = self.split_waveform(clean_waveform)
-        noisy_waveform_windows = self.split_waveform(noisy_waveform)
+        clean_window = clean_window.squeeze()
+        noise_window = noise_window.squeeze()
+
+        band_indices = self.dsp_feature_extractor.bark_bands_indices()
         
-        gains = np.zeros((len(clean_waveform_windows), 24))
-        for i, (clean_window, noisy_window) in enumerate(zip(clean_waveform_windows, noisy_waveform_windows)):
-            clean_window = clean_window.squeeze()
-            noisy_window = noisy_window.squeeze()
-            
-            band_indices = self.dsp_feature_extractor.bark_bands_indices()
-            
-            clean_fft = torch.fft.fft(clean_window).numpy()
-            noisy_fft = torch.fft.fft(noisy_window).numpy()
-            
-            clean_bark_bands = self.dsp_feature_extractor.bark_bands(clean_fft, band_indices)
-            noisy_bark_bands = self.dsp_feature_extractor.bark_bands(noisy_fft, band_indices)
-            
-            clean_band_energy = self.dsp_feature_extractor.compute_band_energies(clean_bark_bands)
-            noisy_band_energy = self.dsp_feature_extractor.compute_band_energies(noisy_bark_bands)
-            
-            gains[i] = self.dsp_feature_extractor.calculate_per_band_gain(clean_band_energy, noisy_band_energy)
-            
-        return gains
+        clean_window_fft = torch.fft.fft(clean_window).numpy()
+        noise_window_fft = torch.fft.fft(noise_window).numpy()
+        
+        clean_bark_bands = self.dsp_feature_extractor.bark_bands(clean_window_fft, band_indices)
+        noise_bark_bands = self.dsp_feature_extractor.bark_bands(noise_window_fft, band_indices)
+        
+        clean_band_energy = self.dsp_feature_extractor.compute_band_energies(clean_bark_bands)
+        noise_band_energy = self.dsp_feature_extractor.compute_band_energies(noise_bark_bands)
+        
+        band_gain_vals = self.dsp_feature_extractor.calculate_per_band_gain(clean_band_energy, noise_band_energy)
+        
+        return torch.from_numpy(band_gain_vals)
             
         
     def apply_noise(self, clean_waveform, noise_waveform, mixing_ratio=0.4):
@@ -135,15 +136,15 @@ class DatasetGenerator(torch.utils.data.Dataset):
         
         return combined_waveform
 
-    def generate_samples_info(self) -> Generator[SampleFileInfo, None, None]:
+    def generate_samples_info(self) -> [SampleFileInfo]:
         '''Generate path info about the samples in the dataset'''
-        
+        samples = []
         for dir_path, _, filenames in os.walk(self.clean_sample_dir):
             for name in filenames:
             
             # for i, name in enumerate(filenames):
-                # if i >= 100:  # For testing purposes, only generate one sample
-                #     break
+            #     if i >= 1:  # For testing purposes
+            #         break
                 
                 if name.endswith(f".wav"):
                     new_dir_path = dir_path.replace(str(self.clean_sample_dir), str(self.combined_sample_dir))
@@ -154,11 +155,12 @@ class DatasetGenerator(torch.utils.data.Dataset):
                     
                     sample_path = os.path.join(dir_path, name)
                     
-                    yield SampleFileInfo(name, 
+                    samples.append(SampleFileInfo(name, 
                                             Path(sample_path), 
                                             noise_name, 
                                             Path(noise_path), 
-                                            Path(combined_file_path))
+                                            Path(combined_file_path)))
+        return samples
                         
     def get_random_noise_file(self) -> Path:
         files = [f for f in os.listdir(self.noise_sample_dir) if os.path.isfile(os.path.join(self.noise_sample_dir, f))]
@@ -195,3 +197,19 @@ class DatasetGenerator(torch.utils.data.Dataset):
             noise_waveform = (noise_waveform * torch.iinfo(torch.int16).max).to(torch.int16)
             
         return clean_waveform, noise_waveform
+    
+# if __name__ == "__main__":
+#     project_path = os.getcwd()
+
+#     clean_dir = os.path.join(project_path, 'data', 'clean')
+#     noise_dir = os.path.join(project_path, 'data', 'noise', 'aircraft')
+#     combined_dir = os.path.join(project_path, 'data', 'combined')
+
+#     dataset_generator = DatasetGenerator(clean_dir, noise_dir, combined_dir)
+    
+#     for dsp_features, target_vad, target_band_gains in dataset_generator:
+#         for window_idx in range(len(dsp_features)):
+#             if window_idx <= 100:
+#                 print(f'target_band_gains: {target_band_gains[window_idx]}')
+#                 print(f'target band gains shape: {target_band_gains[window_idx].shape}')
+        

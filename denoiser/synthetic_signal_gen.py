@@ -10,14 +10,12 @@ class SyntheticSignalGenerator():
         self.volume = 1
         
     def play_audio(self, audio_data: bytes):
-        # for paInt16 sample values must be in range [-32768, 32767]
         p = pyaudio.PyAudio()
         stream = p.open(format=pyaudio.paInt16,
                         channels=1,
                         rate=self.sample_rate,
                         output=True)
         
-        # play. May repeat with different volume values (if done interactively)
         start_time = time.time()
         stream.write(audio_data)
         print("Played sound for {:.2f} seconds".format(time.time() - start_time))

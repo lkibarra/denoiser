@@ -34,8 +34,6 @@ def plot_freq_domain(X, fs, frame_size, label, psd=False):
     plt.grid(True)
     plt.xlabel('Frequency [Hz]')
     
-    # freqs = fftfreq(len(window), 1 / self.sample_rate)[:self.frame_size]
-    
     if psd:
         f, Pxx = plt.psd(X, NFFT=frame_size, Fs=fs, label=label)
         Pxx = 10 * np.log10(Pxx)
@@ -60,23 +58,4 @@ def plot_banded(X):
     plt.grid(True)
 
     plt.show()
-    
-# def play_audio(waveform):
-#     '''Play audio file'''
-    
-#     if isinstance(waveform, torch.Tensor):
-#         waveform = waveform.numpy()
-        
-#     num_channels, num_frames = waveform.shape
-    
-#     if num_channels == 1:
-        
-#         if np.any(np.isnan(waveform)) or np.any(np.isinf(waveform)):
-#             print("Warning: NaN or infinite value encountered in waveform")
-#             waveform = np.nan_to_num(waveform)  # replace NaNs and infinite values with finite numbers
-
-#         # Play audio
-#         display(Audio(waveform, rate=SAMPLE_RATE))
-#     else:
-#         raise ValueError("Waveforms with more than one channel are not supported.")
     
